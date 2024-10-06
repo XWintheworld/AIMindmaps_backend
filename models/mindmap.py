@@ -12,6 +12,7 @@ class Mindmap:
 
         return mindmap_data
     
+    @staticmethod
     def update_mindmap(mindmap_data):
         client = MongoClient('mongodb://localhost:27017/')
         db = client.mindmaps

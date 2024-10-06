@@ -1,7 +1,6 @@
 from flask import Flask
 from routes.mindmap_routes import mindmap_bp
 from utils.db import initialize_db
-from flask import Flask
 from flask_cors import CORS
 
 app = Flask(__name__)

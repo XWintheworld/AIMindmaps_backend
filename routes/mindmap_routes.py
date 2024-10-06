@@ -3,6 +3,8 @@ from models.mindmap import Mindmap
 from openai import OpenAI
 import json  # 引入json库
 import os
+from models.images import NodeImages
+from services.openai_service import generate_image_and_save
 
 # 创建蓝图，用于注册路由
 mindmap_bp = Blueprint('mindmap', __name__)
@@ -17,12 +19,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 def update_mindmap():
     try:
         # 从请求体中获取传回的思维导图数据
-        print(request.headers)  # 打印请求头，看看请求格式是否正确
-        print(request.data)  # 打印原始请求体，看看是否有数据
         mindmap_data = request.json
-        
-
-        print(mindmap_data)
 
         # 检查数据是否包含所需字段
         if not mindmap_data:    #原因是传递的数据结构发生变化，（若还是报错，可以尝试删掉or后面的内容）or 'uid' not in mindmap_data
@@ -58,6 +55,54 @@ def get_mindmap():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@mindmap_bp.route('/generate_image', methods=['POST'])
+def generate_image_for_node():
+    try:
+        # 获取请求参数
+        prompt = request.json.get('prompt')
+        node_uid = request.json.get('uid')
+
+        if not prompt or not node_uid:
+            return jsonify({"error": "Missing prompt or uid"}), 400
+
+        # 调用 OpenAI DALLE 生成新图片并保存到本地
+        new_image_url = generate_image_and_save(prompt)
+
+        print('new_image_url',new_image_url)
+
+        if not new_image_url:
+            return jsonify({"error": "Image generation failed"}), 500
+        
+        # 获取当前节点的图片信息
+        node_images = NodeImages.get_images_by_node_id(node_uid)
+        
+        if not node_images:
+            # 如果 node_uid 在数据库中不存在，则创建新的图片记录
+            history_images = []
+            print(f"Node {node_uid} not found in the database. Creating new record.")   #输出到这报错了
+        else:
+            # 如果存在当前节点的图片信息，提取历史图片
+            history_images = node_images.get('history_images', [])
+            if node_images.get('current_image'):
+                history_images.append(node_images['current_image'])
+
+        # 更新节点的图片信息（如果不存在则插入新记录）
+        updated = NodeImages.update_images_by_node_id(node_uid, new_image_url, history_images)
+
+        print('updated',updated)
+
+        if updated:
+            return jsonify({
+                "message": "Image updated successfully", 
+                "image": new_image_url, 
+                "history_images": history_images
+            }), 200
+        else:
+            return jsonify({"error": "Failed to update node"}), 500
+
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 openai_client = OpenAI()
 
@@ -121,31 +166,17 @@ def generate_mindmap():
                         Please help me summarize the key points from this PDF file into a structured mind map with {number_of_layers} hierarchical layers. The output should follow this format:
 
                         {{
-                        "data": {{
-                            "text": "root node content"
-                        }},
-                        "children": [
-                            {{
                             "data": {{
-                                "text": "first-level node content"
+                                "text": "root node content"
                             }},
                             "children": [
                                 {{
-                                "data": {{
-                                    "text": "second-level node content"
-                                }},
-                                "children": [
-                                    {{
                                     "data": {{
-                                        "text": "third-level node content"
+                                        "text": "subnode content"
                                     }},
                                     "children": []
-                                    }}
-                                ]
                                 }}
                             ]
-                            }}
-                        ]
                         }}
                         """
                 }
@@ -168,6 +199,8 @@ def generate_mindmap():
         # mindmap_data = {"content": message_content, "layers": number_of_layers}
         # db.mindmap_collection.insert_one(mindmap_data)
         parse_content = message_content.value
+
+        print("message:",parse_content)
 
         if '```json' in parse_content:
             try:
