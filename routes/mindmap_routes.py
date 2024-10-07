@@ -13,7 +13,32 @@ mindmap_bp = Blueprint('mindmap', __name__)
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+@mindmap_bp.route('/get_images', methods=['GET'])
+def get_images_for_node():
+    try:
+        # 获取请求参数
+        node_uid = request.args.get('uid')
 
+        if not node_uid:
+            return jsonify({"error": "Missing node uid"}), 400
+
+        # 从数据库获取节点的图片信息
+        node_images = NodeImages.get_images_by_node_id(node_uid)
+
+        if not node_images:
+            return jsonify({"error": "Node not found"}), 404
+
+        # 获取当前图片和历史图片列表
+        current_image = node_images.get('current_image', None)
+        history_images = node_images.get('history_images', [])
+
+        return jsonify({
+            "display_image": current_image,
+            "history_images": history_images
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @mindmap_bp.route('/update', methods=['POST'])
 def update_mindmap():
@@ -111,7 +136,7 @@ def generate_mindmap():
     try:
         # 获取上传的 PDF 文件和层数
         pdf_file = request.files['pdf']
-        number_of_layers = request.form.get('layers')
+        level_of_detail = request.form.get('layers')
 
         # 将文件保存到本地
         file_path = os.path.join(UPLOAD_FOLDER, pdf_file.filename)
@@ -155,7 +180,7 @@ def generate_mindmap():
             tool_resources={"file_search": {"vector_store_ids": [vector_store.id]}},
         )
 
-        print(f'Please help me summarize the key points from this PDF file into a structured mind map with {number_of_layers} hierarchical layers. The output should follow this format:')
+        print(f'Please help me summarize the key points from this PDF file into a structured mind map with {level_of_detail} level of detail. The output should follow this format:')
 
         # 创建线程并附加文件到消息
         thread = openai_client.beta.threads.create(
@@ -163,7 +188,7 @@ def generate_mindmap():
                 {
                     "role": "user",
                     "content": f"""
-                        Please help me summarize the key points from this PDF file into a structured mind map with {number_of_layers} hierarchical layers. The output should follow this format:
+                        Please help me summarize the key points from this PDF file into a structured mind map with {level_of_detail} level of detail. The output should follow this format:
 
                         {{
                             "data": {{
@@ -196,7 +221,7 @@ def generate_mindmap():
 
         # 数据埋点的时候可以思考如何保存首次的number of layers
         # 将生成的思维导图数据存储到 MongoDB 
-        # mindmap_data = {"content": message_content, "layers": number_of_layers}
+        # mindmap_data = {"content": message_content, "layers": level_of_detail}
         # db.mindmap_collection.insert_one(mindmap_data)
         parse_content = message_content.value
 

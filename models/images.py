@@ -5,6 +5,14 @@ class NodeImages:
     def get_images_by_node_id(node_uid):
         client = MongoClient('mongodb://localhost:27017/')
         db = client.mindmaps_images
+        # 查询节点的图片信息
+        node_images = db.images_collection.find_one({"node_uid": node_uid}, {"_id": 0, "current_image": 1, "history_images": 1})
+        return node_images
+    
+    @staticmethod
+    def get_images_by_node_id(node_uid):
+        client = MongoClient('mongodb://localhost:27017/')
+        db = client.mindmaps_images
         return db.images_collection.find_one({"node_uid": node_uid})
     
     @staticmethod
