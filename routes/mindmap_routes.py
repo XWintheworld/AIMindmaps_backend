@@ -4,6 +4,8 @@ from openai import OpenAI
 import json  # 引入json库
 import os
 from models.images import NodeImages
+from models.user import User
+from models.mindmap import Mindmap
 from services.openai_service import generate_image_and_save
 
 # 创建蓝图，用于注册路由
@@ -12,6 +14,25 @@ mindmap_bp = Blueprint('mindmap', __name__)
 # 定义上传文件保存路径
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+@mindmap_bp.route('/login', methods=['POST'])
+def login():
+    try:
+        # 获取前端传递的用户名
+        username = request.json.get('username')
+        if not username:
+            return jsonify({"error": "Missing username"}), 400
+
+        # 创建用户或获取已有用户的 user_id
+        user_id = User.create_user(username)
+
+        return jsonify({
+            "message": "Login successful",
+            "user_id": user_id
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @mindmap_bp.route('/get_images', methods=['GET'])
 def get_images_for_node():
@@ -28,13 +49,15 @@ def get_images_for_node():
         if not node_images:
             return jsonify({"error": "Node not found"}), 404
 
-        # 获取当前图片和历史图片列表
-        current_image = node_images.get('current_image', None)
-        history_images = node_images.get('history_images', [])
+        # 获取当前图片的 URL
+        current_image_url = node_images.get('current_image', {}).get('url', None)
+
+        # 将历史图片解析为 URL 列表
+        history_images_urls = [image.get('url') for image in node_images.get('history_images', [])]
 
         return jsonify({
-            "display_image": current_image,
-            "history_images": history_images
+            "display_image": current_image_url,
+            "history_images": history_images_urls
         }), 200
 
     except Exception as e:
@@ -44,11 +67,20 @@ def get_images_for_node():
 def update_mindmap():
     try:
         # 从请求体中获取传回的思维导图数据
-        mindmap_data = request.json
+        mindmap_data = request.json.get('mindmap_data')
+        user_id = request.json.get('user_id')
+
+        # print('user_id',user_id)
 
         # 检查数据是否包含所需字段
-        if not mindmap_data:    #原因是传递的数据结构发生变化，（若还是报错，可以尝试删掉or后面的内容）or 'uid' not in mindmap_data
-            return jsonify({"error": "Invalid data structure"}), 400
+        if not mindmap_data or not user_id:
+            return jsonify({"error": "Invalid data structure or missing user_id"}), 400
+        
+        # 将 user_id 添加到思维导图数据中
+        mindmap_data['user_id'] = user_id
+
+        # print('mindmap_data:', mindmap_data)
+        print('mindmap_data user_id:', mindmap_data['user_id'])
 
         # 调用数据模型更新数据库中的思维导图
         updated = Mindmap.update_mindmap(mindmap_data)
@@ -86,9 +118,10 @@ def generate_image_for_node():
         # 获取请求参数
         prompt = request.json.get('prompt')
         node_uid = request.json.get('uid')
+        user_id = request.json.get('user_id')  # 获取 user_id
 
-        if not prompt or not node_uid:
-            return jsonify({"error": "Missing prompt or uid"}), 400
+        if not prompt or not node_uid or not user_id:
+            return jsonify({"error": "Missing prompt, uid, or user_id"}), 400
 
         # 调用 OpenAI DALLE 生成新图片并保存到本地
         new_image_url = generate_image_and_save(prompt)
@@ -110,9 +143,9 @@ def generate_image_for_node():
             history_images = node_images.get('history_images', [])
             if node_images.get('current_image'):
                 history_images.append(node_images['current_image'])
-
+        
         # 更新节点的图片信息（如果不存在则插入新记录）
-        updated = NodeImages.update_images_by_node_id(node_uid, new_image_url, history_images)
+        updated = NodeImages.update_images_by_node_id(node_uid, new_image_url, prompt, history_images, user_id)
 
         print('updated',updated)
 
@@ -120,7 +153,7 @@ def generate_image_for_node():
             return jsonify({
                 "message": "Image updated successfully", 
                 "image": new_image_url, 
-                "history_images": history_images
+                "history_images": [img.get('url') for img in history_images]   # 基于目前的数据结构如何保证只return 包含有url的list数据？ --用代码解析？
             }), 200
         else:
             return jsonify({"error": "Failed to update node"}), 500
@@ -137,6 +170,10 @@ def generate_mindmap():
         # 获取上传的 PDF 文件和层数
         pdf_file = request.files['pdf']
         level_of_detail = request.form.get('layers')
+        user_id = request.form.get('user_id') 
+
+        if not user_id:
+            return jsonify({"error": "Missing user_id"}), 400
 
         # 将文件保存到本地
         file_path = os.path.join(UPLOAD_FOLDER, pdf_file.filename)
@@ -219,28 +256,29 @@ def generate_mindmap():
 
         # print("message:",message_content)
 
-        # 数据埋点的时候可以思考如何保存首次的number of layers
-        # 将生成的思维导图数据存储到 MongoDB 
-        # mindmap_data = {"content": message_content, "layers": level_of_detail}
-        # db.mindmap_collection.insert_one(mindmap_data)
         parse_content = message_content.value
 
-        print("message:",parse_content)
+        # print("message:",parse_content)
 
         if '```json' in parse_content:
+            print("message:")
             try:
                 final_data = parse_content.split('```json')[1].split('```')[0].strip()
-                print(final_data)
+                print('final_data',final_data)
             except IndexError:
                 print("Error: code block not found or improperly formatted.")
         else:
             print("Error: No code block found in the message content.")
 
+        print('parsed')
         #  确保final_data是有效的JSON字符串
         try:
             final_data_dict = json.loads(final_data)  # 将字符串解析为字典
+            saved_record = Mindmap.save_mindmap(user_id, pdf_file.filename, level_of_detail, final_data_dict)
+            print('saved_record:',saved_record)
             return jsonify(final_data_dict), 200  # 返回JSON响应
         except json.JSONDecodeError as e:
+            print('Invalid JSON format')
             return jsonify({"error": "Invalid JSON format"}), 500
 
 

@@ -1,4 +1,5 @@
 from pymongo import MongoClient
+from datetime import datetime, timezone
 
 class Mindmap:
     @staticmethod
@@ -11,6 +12,27 @@ class Mindmap:
         mindmap_data = mindmap_collection.find_one({"root.data.uid": uid}, {"_id": 0})  # 不返回 MongoDB 的 _id 字段
 
         return mindmap_data
+    
+    @staticmethod
+    def save_mindmap(user_id, pdf_filename, level_of_detail, mindmap_data):
+        client = MongoClient('mongodb://localhost:27017/')
+        db = client.mindmaps  # 连接到 mindmaps 数据库
+        mindmap_collection = db.system_data  # 连接到新的集合 mindmap_data
+        print('connected')
+        current_time = datetime.now(timezone.utc)
+
+        # 创建一个记录包含用户信息、文件名、思维导图数据等
+        record = {
+            "user_id": user_id,
+            "pdf_filename": pdf_filename,
+            "level_of_detail": level_of_detail,
+            "mindmap_data": mindmap_data,
+            "created_at": current_time
+        }
+
+        # 插入到数据库中
+        mindmap_collection.insert_one(record)
+        return record
     
     @staticmethod
     def update_mindmap(mindmap_data):
