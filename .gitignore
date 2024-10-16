@@ -1,0 +1,3 @@
+# Ignore static and uploads folders
+static/
+uploads/
