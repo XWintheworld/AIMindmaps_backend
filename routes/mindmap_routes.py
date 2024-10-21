@@ -1,3 +1,4 @@
+# coding=utf-8
 from flask import Blueprint, request, jsonify
 from models.mindmap import Mindmap
 from openai import OpenAI

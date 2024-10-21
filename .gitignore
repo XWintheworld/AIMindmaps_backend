@@ -1,3 +1,4 @@
+# coding=utf-8
 # Ignore static and uploads folders
 static/
 uploads/

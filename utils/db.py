@@ -1,3 +1,4 @@
+# coding=utf-8
 from pymongo import MongoClient
 
 #初始化与 MongoDB 的连接。此代码在项目启动时由 app.py 调用

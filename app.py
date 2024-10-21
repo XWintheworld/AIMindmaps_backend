@@ -1,3 +1,4 @@
+# coding=utf-8
 from flask import Flask
 from routes.mindmap_routes import mindmap_bp
 from utils.db import initialize_db
